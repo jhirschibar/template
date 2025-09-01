@@ -1,29 +1,36 @@
 repos:
-  - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+  
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.8.14
     hooks:
-      - id: trailing-whitespace
-      - id: end-of-file-fixer
-      - id: check-yaml
-      - id: check-added-large-files
-      - id: check-merge-conflict
-      - id: debug-statements
+      # Update the uv lockfile
+      - id: uv-lock
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.0
+    # Ruff version.
+    rev: v0.12.11
     hooks:
-      - id: ruff
-        args: [check, --fix]
+      # Run the linter.
+      - id: ruff-check
+      # Run the formatter.
       - id: ruff-format
-
-  - repo: https://github.com/astral-sh/ty
-    rev: v0.0.1a19
-    hooks:
-      - id: ty
-        args: [check]
 
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v4.0.0
     hooks:
       - id: commitizen
         stages: [commit-msg]
+  
+  - repo: local
+    hooks:
+      - id: type-check
+        name: ty Type Check
+        entry: uv run ty check
+        types: [python]
+        # always_run: true
+      - id: pytest
+        name: pytest
+        entry: uv run pytest
+        types: [python]
+        # always_run: true

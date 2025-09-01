@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python 3.13
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Check conventional commits
+        run: |
+          # Get the latest commit message
+          LATEST_COMMIT=$(git log -1 --pretty=%B)
+          echo "Latest commit: $LATEST_COMMIT"
+
+          # Check if it follows conventional commit format
+          if echo "$LATEST_COMMIT" | grep -qE "^(feat|fix|docs|style|refactor|perf|test|chore|ci|build|revert)(\(.+\))?: .{1,}"; then
+            echo "✓ Commit follows conventional commit format"
+          else
+            echo "⚠ Commit does not follow conventional commit format"
+            echo "Expected format: type(scope): description"
+            echo "Example: feat: add new feature"
+          fi
+
+      - name: Create version bump and release
+        id: bump
+        run: |
+          # Determine version bump type from commits
+          if [[ "${{ github.event.inputs.version_type }}" != "" ]]; then
+            BUMP_TYPE="${{ github.event.inputs.version_type }}"
+          else
+            # Auto-detect from conventional commits
+            if git log --oneline -n 10 | grep -q "feat:"; then
+              BUMP_TYPE="minor"
+            elif git log --oneline -n 10 | grep -q "fix:"; then
+              BUMP_TYPE="patch"
+            elif git log --oneline -n 10 | grep -q "BREAKING CHANGE"; then
+              BUMP_TYPE="major"
+            else
+              BUMP_TYPE="patch"
+            fi
+          fi
+
+          echo "Bump type: $BUMP_TYPE"
+
+          # Bump version using commitizen
+          uv run cz bump --yes --increment $BUMP_TYPE
+
+          # Get the new version
+          NEW_VERSION=$(uv run cz version --project)
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # Generate changelog for this release
+          CHANGELOG_CONTENT=$(uv run cz changelog --unreleased-version $NEW_VERSION)
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "New version: $NEW_VERSION"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.bump.outputs.new_version }}
+          release_name: Release v${{ steps.bump.outputs.new_version }}
+          body: ${{ steps.bump.outputs.changelog }}
+
+          draft: false
+          prerelease: false

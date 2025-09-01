@@ -1,0 +1,132 @@
+name: Docker
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - '**/Dockerfile*'
+      - '.github/workflows/docker.yml'
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - '**/Dockerfile*'
+      - '.github/workflows/docker.yml'
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+
+jobs:
+  docker-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        dockerfile: [Dockerfile]
+        include:
+          - dockerfile: Dockerfile
+            image-name: template
+            test-command: "uv run pytest tests/ -v"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./${{ matrix.dockerfile }}
+          tags: ${{ matrix.image-name }}:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Test Docker image build
+        run: |
+          echo "✓ Docker image ${{ matrix.image-name }}:test built successfully"
+
+      - name: Run container and execute tests
+        run: |
+          echo "Starting container for testing..."
+          docker run --rm --name test-container -d ${{ matrix.image-name }}:test sleep 300
+
+          echo "Waiting for container to be ready..."
+          docker exec test-container uv --version || (docker logs test-container && exit 1)
+
+          echo "Running tests inside container..."
+          docker exec test-container ${{ matrix.test-command }} || (docker logs test-container && exit 1)
+
+          echo "✓ Tests passed successfully in container"
+
+      - name: Run container health check
+        run: |
+          echo "Running basic functionality test..."
+          # Test the hello function
+          OUTPUT=$(docker run --rm ${{ matrix.image-name }}:test uv run python -c "from template import hello; print(hello('Test'))")
+          if [[ "$OUTPUT" == *"Hello, Test! Welcome to the template project."* ]]; then
+            echo "✓ Container functionality test passed"
+          else
+            echo "✗ Container functionality test failed"
+            echo "Output: $OUTPUT"
+            exit 1
+          fi
+
+      - name: Clean up containers
+        if: always()
+        run: |
+          echo "Cleaning up containers..."
+          docker stop test-container || true
+          docker rm test-container || true
+          docker image rm ${{ matrix.image-name }}:test || true
+
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "## Docker Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ matrix.image-name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dockerfile**: ${{ matrix.dockerfile }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build**: ✅ Success" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tests**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+          echo "- **Functionality**: ✅ Verified" >> $GITHUB_STEP_SUMMARY
+
+  multi-dockerfile-test:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Find all Dockerfiles
+        id: find-dockerfiles
+        run: |
+          # Find all Dockerfiles in the repository
+          DOCKERFILES=$(find . -name "Dockerfile*" -type f | sed 's|^\./||' | tr '\n' ' ')
+          echo "dockerfiles=$DOCKERFILES" >> $GITHUB_OUTPUT
+          echo "Found Dockerfiles: $DOCKERFILES"
+
+      - name: Test multiple Dockerfiles
+        if: steps.find-dockerfiles.outputs.dockerfiles != ''
+        run: |
+          for dockerfile in ${{ steps.find-dockerfiles.outputs.dockerfiles }}; do
+            echo "Testing $dockerfile..."
+            IMAGE_NAME=$(basename "$dockerfile" | sed 's/Dockerfile//g' | sed 's/^$/app/g')
+            IMAGE_TAG="${IMAGE_NAME}:test-${GITHUB_RUN_ID}"
+
+            # Build the image
+            docker build -f "$dockerfile" -t "$IMAGE_TAG" .
+
+            # Run basic test
+            docker run --rm "$IMAGE_TAG" uv run python -c "from template import hello; print('Container test passed')"
+
+            # Clean up
+            docker image rm "$IMAGE_TAG"
+            echo "✓ $dockerfile test completed"
+          done

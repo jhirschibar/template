@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  template:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: template-app
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    command: uv run python -c "from template import hello; print(hello())"
+    healthcheck:
+      test: ["CMD", "uv", "run", "python", "-c", "from template import hello; print('healthy')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  template-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: template-test
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    command: uv run pytest tests/ -v
+    profiles:
+      - test
+
+  template-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: template-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - .:/app
+      - /app/__pycache__
+    command: sleep infinity
+    profiles:
+      - dev

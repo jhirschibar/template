@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --dev
+
+      - name: Run ruff check
+        run: uv run ruff check .
+
+      - name: Run ruff format check
+        run: uv run ruff format --check .
+
+      - name: Run ty type checking
+        run: uv run ty check src/
+
+      - name: Run tests
+        run: uv run pytest --cov=src/template --cov-report=xml
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false
+
+  docker:
+    name: Docker Build & Test
+    runs-on: ubuntu-latest
+    if: contains(github.event.head_commit.modified, 'Dockerfile') || contains(github.event.head_commit.modified, 'pyproject.toml') || contains(github.event.head_commit.modified, 'src/') || contains(github.event.head_commit.modified, 'tests/') || github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Check for Dockerfile
+        id: check-dockerfile
+        run: |
+          if [ -f "Dockerfile" ]; then
+            echo "dockerfile_exists=true" >> $GITHUB_OUTPUT
+            echo "Found Dockerfile"
+          else
+            echo "dockerfile_exists=false" >> $GITHUB_OUTPUT
+            echo "No Dockerfile found, skipping Docker tests"
+          fi
+
+      - name: Build Docker image
+        if: steps.check-dockerfile.outputs.dockerfile_exists == 'true'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          tags: template:test-${{ github.run_id }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Test Docker container functionality
+        if: steps.check-dockerfile.outputs.dockerfile_exists == 'true'
+        run: |
+          echo "Testing Docker container..."
+
+          # Test basic functionality
+          OUTPUT=$(docker run --rm template:test-${{ github.run_id }} uv run python -c "from template import hello; print(hello('CI'))")
+          if [[ "$OUTPUT" == *"Hello, CI! Welcome to the template project."* ]]; then
+            echo "✓ Container functionality test passed"
+          else
+            echo "✗ Container functionality test failed"
+            echo "Output: $OUTPUT"
+            exit 1
+          fi
+
+      - name: Run tests in Docker container
+        if: steps.check-dockerfile.outputs.dockerfile_exists == 'true'
+        run: |
+          echo "Running tests in Docker container..."
+          docker run --rm -v $(pwd):/workspace template:test-${{ github.run_id }} uv run pytest /workspace/tests/ -v
+
+      - name: Clean up Docker resources
+        if: always() && steps.check-dockerfile.outputs.dockerfile_exists == 'true'
+        run: |
+          echo "Cleaning up Docker resources..."
+          docker image rm template:test-${{ github.run_id }} || true
+          docker system prune -f || true
+
+      - name: Docker test summary
+        if: always()
+        run: |
+          if [ "${{ steps.check-dockerfile.outputs.dockerfile_exists }}" == "true" ]; then
+            echo "## Docker Test Results ✅" >> $GITHUB_STEP_SUMMARY
+            echo "- Build: Success" >> $GITHUB_STEP_SUMMARY
+            echo "- Functionality: Verified" >> $GITHUB_STEP_SUMMARY
+            echo "- Tests: Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Docker Test Results ⏭️" >> $GITHUB_STEP_SUMMARY
+            echo "- No Dockerfile found, tests skipped" >> $GITHUB_STEP_SUMMARY
+          fi

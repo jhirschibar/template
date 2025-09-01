@@ -1,0 +1,80 @@
+[project]
+name = "template"
+version = "0.1.0"
+description = "Project template for CI/CD, actions, testing, code hygiene, etc"
+readme = "README.md"
+authors = [
+    { name = "jhirschibar", email = "jhirschibar@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = []
+
+[dependency-groups]
+dev = [
+    "ruff>=0.8.0",
+    "ty>=0.0.1a19",
+    "pre-commit>=4.0.0",
+    "commitizen>=4.0.0",
+    "pytest>=8.0.0",
+    "pytest-cov>=5.0.0",
+]
+
+[build-system]
+requires = ["uv_build>=0.8.9,<0.9.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+exclude = []
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade,
+    "TID252", # too many task tags
+    "NPY201", # no python type
+    "C901", # too complex
+]
+task-tags = ["TODO", "NOTE"]
+
+[tool.ruff.lint.pycodestyle]
+ignore-overlong-task-comments = true
+
+[tool.ruff.lint.mccabe]
+max-complexity = 20
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+tag_format = "v$version"
+changelog_file = "CHANGELOG.md"
+update_changelog_on_bump = true
+major_version_zero = true
+
+[tool.commitizen.types]
+feat = { description = "A new feature", changelog = true }
+fix = { description = "A bug fix", changelog = true }
+docs = { description = "Documentation only changes", changelog = true }
+style = { description = "Changes that do not affect the meaning of the code", changelog = false }
+refactor = { description = "A code change that neither fixes a bug nor adds a feature", changelog = false }
+perf = { description = "A code change that improves performance", changelog = true }
+test = { description = "Adding missing tests or correcting existing tests", changelog = false }
+build = { description = "Changes that affect the build system or external dependencies", changelog = false }
+ci = { description = "Changes to our CI configuration files and scripts", changelog = false }
+chore = { description = "Other changes that don't modify src or test files", changelog = false }
+revert = { description = "Reverts a previous commit", changelog = true }

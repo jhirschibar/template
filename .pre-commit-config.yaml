@@ -13,14 +13,14 @@ repos:
     rev: v0.8.0
     hooks:
       - id: ruff
-        args: [--fix]
+        args: [check, --fix]
       - id: ruff-format
 
   - repo: https://github.com/astral-sh/ty
-    rev: v0.0.15
+    rev: v0.0.1a19
     hooks:
       - id: ty
-        additional_dependencies: ["ruff"]
+        args: [check]
 
   - repo: https://github.com/commitizen-tools/commitizen
     rev: v4.0.0
